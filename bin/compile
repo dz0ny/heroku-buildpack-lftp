@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+set -eo pipefail
+
+indent() {
+  sed -u 's/^/       /'
+}
+
+# Usage: $ set-env key value
+set-env() {
+  echo "export $1=$2" >> $PROFILE_PATH
+}
+
+mktmpdir() {
+  dir=$(mktemp -t fakesu-$1-XXXX)
+  rm -rf $dir
+  mkdir -p $dir
+  echo $dir
+}
+
+BUILD_DIR=$1
+CACHE_DIR=$2
+VERSION="4.5.2"
+LFTP_BUILD="$(mktmpdir lftp)"
+INSTALL_DIR="$BUILD_DIR/.heroku/vendor/lftp"
+PROFILE_PATH="$BUILD_DIR/.profile.d/lftp.sh"
+
+mkdir -p $INSTALL_DIR
+mkdir -p $(dirname $PROFILE_PATH)
+mkdir -p $CACHE_DIR
+
+if [ ! -d $CACHE_DIR/lftp_$VERSION ]; then
+	echo "Fetching and installing lftp" | indent
+	cd $LFTP_BUILD
+	curl -O http://lftp.yar.ru/ftp/lftp-"$VERSION".tar.xz
+	curl --silent http://lftp.yar.ru/ftp/lftp-"$VERSION".md5sum | grep lftp-"$VERSION".tar.xz > lftp-"$VERSION".tar.xz.md5sum
+	md5sum --check lftp-"$VERSION".tar.xz.md5sum
+	tar xvf lftp-"$VERSION".tar.xz
+	cd lftp-"$VERSION"
+	echo "Compiling lftp" | indent
+	./configure --prefix=$CACHE_DIR/lftp_$VERSION/ --with-openssl
+	make install
+	cp -R $CACHE_DIR/lftp_$VERSION/* $INSTALL_DIR/
+else
+	echo "Installing lftp from cache" | indent
+	cp -R $CACHE_DIR/lftp_$VERSION/* $INSTALL_DIR/
+fi
+
+set-env PATH '/app/.heroku/vendor/lftp/bin/:$PATH'
+set-env LD_LIBRARY_PATH '/app/.heroku/vendor/lftp/lib/:$LD_LIBRARY_PATH'
+
+echo "Done" | indent
